@@ -4,6 +4,8 @@ GA-5 solutions — built from scratch, deployed under your own identity.
 Endpoints:
   POST /charge     -> Q2: Spec-Driven Development (Proration Bug)
   POST /q3/check   -> Q3: Agent Harness Pre-Tool-Call Guardrail Hook
+  POST /scan       -> Q4: Skill Safety Audit Scanner
+  ALL  /mcp         -> Q5: Live MCP Server (solve_challenge tool)
 
 Q3's policy (which file is secret, which dir writes are allowed into, which
 hosts HTTP requests may target) is READ FROM ENVIRONMENT VARIABLES rather
@@ -11,7 +13,6 @@ than hardcoded, because that policy is generated per-student by the exam
 platform. Set the env vars below to match YOUR copy of the assignment page
 before you rely on this for grading. See README.md for details.
 """
-
 import base64
 import fnmatch
 import os
@@ -27,6 +28,7 @@ from pydantic import BaseModel
 
 from scanner import scan_skill
 from mcp_server import router as mcp_router
+
 app = FastAPI(title="GA-5 Solutions")
 
 app.add_middleware(
@@ -36,22 +38,14 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=False,
 )
-app = FastAPI(title="GA-5 Solutions")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    allow_credentials=False,
-)
+# Q5 — Live MCP Server: mounts POST/GET /mcp exposing the solve_challenge tool
+app.include_router(mcp_router)
 
-app.include_router(mcp_router)   # <-- add this line, exposes POST/GET /mcp
 
 @app.get("/")
 def root():
     return {"status": "ok", "message": "GA-5 solutions server is running"}
-
 
 
 # ==============================================================================
@@ -59,8 +53,8 @@ def root():
 # ==============================================================================
 #
 # v1 (legacy): divisor is always a hardcoded 30, regardless of the month's
-#              actual length. This is the historical bug.
-# v2 (fixed):  divisor is the actual number of days in the billing month.
+# actual length. This is the historical bug.
+# v2 (fixed): divisor is the actual number of days in the billing month.
 # Both must remain available since old invoices need v1 for audit/reconciliation.
 
 class ProrationRequest(BaseModel):
@@ -75,7 +69,6 @@ class ProrationRequest(BaseModel):
 @app.post("/q2/charge")
 def calculate_proration(req: ProrationRequest):
     price_delta = req.new_price - req.old_price
-
     if req.spec == "v1":
         charge = price_delta * (req.days_remaining / 30.0)
     elif req.spec == "v2":
@@ -84,7 +77,6 @@ def calculate_proration(req: ProrationRequest):
         charge = price_delta * (req.days_remaining / req.days_in_actual_month)
     else:
         raise HTTPException(status_code=400, detail="spec must be 'v1' or 'v2'")
-
     return {"charge": round(charge, 2)}
 
 
@@ -96,10 +88,10 @@ def calculate_proration(req: ProrationRequest):
 # specific assignment page states. Fill these in on your host (Render env
 # vars) once you have your own copy of the question:
 #
-#   Q3_HOME_DIR         e.g. /home/agent
-#   Q3_CWD               e.g. /home/agent/workspace
-#   Q3_SECRET_REL        e.g. .bashrc                (relative to HOME_DIR)
-#   Q3_WRITE_DIR          e.g. /data/agent/outbox/    (must end without care about trailing slash)
+#   Q3_HOME_DIR          e.g. /home/agent
+#   Q3_CWD                e.g. /home/agent/workspace
+#   Q3_SECRET_REL         e.g. .bashrc (relative to HOME_DIR)
+#   Q3_WRITE_DIR          e.g. /data/agent/outbox/ (must end without care about trailing slash)
 #   Q3_ALLOWED_DOMAINS    comma-separated, e.g. registry.npmjs.org,api.github.com
 #
 # Sensible defaults are provided below so the server runs out of the box;
@@ -138,7 +130,6 @@ def _decode_obfuscations(cmd: str) -> str:
     escapes) and append the decoded text so downstream path matching can see
     through them, without needing to actually execute anything."""
     decoded_cmd = cmd
-
     for m in re.findall(r'[A-Za-z0-9+/=]{12,}', cmd):
         try:
             decoded = base64.b64decode(m, validate=True).decode('utf-8', errors='ignore')
@@ -146,21 +137,18 @@ def _decode_obfuscations(cmd: str) -> str:
                 decoded_cmd += " " + decoded
         except Exception:
             pass
-
     for m in re.findall(r'(?:\\x[0-9a-fA-F]{2})+', cmd):
         try:
             decoded = bytes.fromhex(m.replace('\\x', '')).decode('utf-8', errors='ignore')
             decoded_cmd += " " + decoded
         except Exception:
             pass
-
     for m in re.findall(r'(?:\\[0-7]{3})+', cmd):
         try:
             parts = [chr(int(x, 8)) for x in re.findall(r'[0-7]{3}', m)]
             decoded_cmd += " " + "".join(parts)
         except Exception:
             pass
-
     return decoded_cmd
 
 
@@ -186,7 +174,6 @@ def _check_bash(command: str, policy: dict) -> dict:
 
     for sub in sub_commands:
         sub = sub.strip()
-
         cd_match = re.match(r'\bcd\s+([^;\s&|]+)', sub)
         if cd_match:
             target = cd_match.group(1).strip("'\"")
@@ -204,7 +191,6 @@ def _check_bash(command: str, policy: dict) -> dict:
                 continue
             token_clean = token.strip("'\"")
             token_clean = token_clean.replace("$HOME", home_dir).replace("~", home_dir).replace('\\', '/')
-
             resolved = posixpath.normpath(token_clean) if posixpath.isabs(token_clean) \
                 else posixpath.normpath(posixpath.join(simulated_cwd, token_clean))
 
@@ -237,7 +223,6 @@ def _check_write_file(path: str, policy: dict) -> dict:
         return {"decision": "block", "reason": "Null byte in write path"}
 
     raw_path = raw_path.replace("$HOME", home_dir).replace("~", home_dir).replace('\\', '/')
-
     resolved = posixpath.normpath(raw_path) if posixpath.isabs(raw_path) \
         else posixpath.normpath(posixpath.join(write_dir, raw_path))
 
@@ -271,14 +256,12 @@ def check_guardrail_get():
 @app.post("/q3/check")
 def check_guardrail(req: GuardrailRequest):
     policy = _get_q3_policy()
-
     if req.tool == "bash":
         return _check_bash(req.command, policy)
     elif req.tool == "write_file":
         return _check_write_file(req.path, policy)
     elif req.tool == "http_request":
         return _check_http_request(req.url, policy)
-
     return {"decision": "block", "reason": f"Unknown tool: {req.tool}"}
 
 
