@@ -25,6 +25,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from scanner import scan_skill
+
 app = FastAPI(title="GA-5 Solutions")
 
 app.add_middleware(
@@ -267,6 +269,20 @@ def check_guardrail(req: GuardrailRequest):
         return _check_http_request(req.url, policy)
 
     return {"decision": "block", "reason": f"Unknown tool: {req.tool}"}
+
+
+# ==============================================================================
+# Q4 — Skill Safety Audit: Scanner API
+# ==============================================================================
+
+class ScanRequest(BaseModel):
+    skill: str
+
+
+@app.post("/scan")
+@app.post("/q4/scan")
+def scan_skill_endpoint(req: ScanRequest):
+    return {"categories": scan_skill(req.skill)}
 
 
 if __name__ == "__main__":
