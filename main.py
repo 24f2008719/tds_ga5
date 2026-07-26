@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from scanner import scan_skill
 from mcp_server import router as mcp_router
+from mailroom import router as mailroom_router
 
 app = FastAPI(title="GA-5 Solutions")
 
@@ -41,6 +42,9 @@ app.add_middleware(
 
 # Q5 — Live MCP Server: mounts POST/GET /mcp exposing the solve_challenge tool
 app.include_router(mcp_router)
+
+# Q5(b) — Safe AI Mailroom Agent: mounts POST /mailroom
+app.include_router(mailroom_router)
 
 
 @app.get("/")
