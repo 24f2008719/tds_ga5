@@ -26,7 +26,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from scanner import scan_skill
+from mcp_server import router as mcp_router
+app = FastAPI(title="GA-5 Solutions")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
+)
 app = FastAPI(title="GA-5 Solutions")
 
 app.add_middleware(
@@ -37,10 +46,12 @@ app.add_middleware(
     allow_credentials=False,
 )
 
+app.include_router(mcp_router)   # <-- add this line, exposes POST/GET /mcp
 
 @app.get("/")
 def root():
     return {"status": "ok", "message": "GA-5 solutions server is running"}
+
 
 
 # ==============================================================================
